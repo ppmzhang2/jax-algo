@@ -1,0 +1,8 @@
+{
+    "typeCheckingMode": "off",
+    "pythonVersion": "3.11",
+    "diagnosticMode": "openFilesOnly",
+    "exclude": ["**/node_modules", "**/__pycache__", "**/__pypackages__"],
+    "ignore": ["**/node_modules", "**/__pycache__", "**/__pypackages__"],
+    "extraPaths": ["./__pypackages__/3.11/lib", "./src"]
+}
