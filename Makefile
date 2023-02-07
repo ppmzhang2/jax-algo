@@ -28,6 +28,11 @@ install-pdm:
 update-lock:
 	pdm update --no-sync
 
+.PHONY: deploy
+## deploy dev environment
+deploy-dev:
+	pdm sync --clean
+
 .PHONY: deploy-dev
 ## deploy dev environment
 deploy-dev:
