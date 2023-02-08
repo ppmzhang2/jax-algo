@@ -80,7 +80,8 @@ line_length = 79
 force_single_line = true
 
 [project.scripts]
-jaxalgo = "jaxalgo.cli:cli"
+resnet = "jaxalgo.cli:resnet"
+yolov3 = "jaxalgo.cli:yolov3"
 
 [project.optional-dependencies]
 repl = [
@@ -106,6 +107,7 @@ dependencies = [
     "pillow>=9.4.0",
     "dm-haiku>=0.0.9",
     "optax>=0.1.4",
+    "SQLAlchemy>=2.0.2",
 ]
 requires-python = ">=3.9,<3.12"
 license = {text = "MIT"}
