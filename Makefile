@@ -28,15 +28,20 @@ install-pdm:
 update-lock:
 	pdm update --no-sync
 
-.PHONY: deploy
-## deploy dev environment
-deploy-dev:
-	pdm sync --clean
+.PHONY: deploy-cpu
+## deploy running environment of CPU
+deploy-cpu:
+	pdm sync -G cpu --clean
+
+.PHONY: deploy-gpu
+## deploy running environment of GPU
+deploy-gpu:
+	pdm sync -G gpu --clean
 
 .PHONY: deploy-dev
 ## deploy dev environment
 deploy-dev:
-	pdm sync -G dev -G repl --clean
+	pdm sync -G dev -G repl -G cpu --clean
 
 .PHONY: format
 ## isort and yapf formatting
