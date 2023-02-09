@@ -1,4 +1,5 @@
 """Manipulate width-height boxes."""
+import jax
 import jax.numpy as jnp
 
 __all__ = ["iou"]
@@ -6,6 +7,7 @@ __all__ = ["iou"]
 EPSILON = 1e-3
 
 
+@jax.jit
 def iou(whs1: jnp.ndarray, whs2: jnp.ndarray) -> jnp.ndarray:
     """IoU calculated without x and y, by aligning boxes along two edges.
 

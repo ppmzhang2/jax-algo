@@ -17,6 +17,7 @@ transform it using functions in `pbox`
 """
 import math
 
+import jax
 import jax.numpy as jnp
 
 from jaxalgo.yolov3.box import dbox
@@ -24,6 +25,7 @@ from jaxalgo.yolov3.box import dbox
 EPSILON = 1e-3
 
 
+@jax.jit
 def xy(bbox: jnp.ndarray) -> jnp.ndarray:
     """From bounding box get coordinates tensor of shape (..., 2).
 
@@ -33,6 +35,7 @@ def xy(bbox: jnp.ndarray) -> jnp.ndarray:
     return bbox[..., :2]
 
 
+@jax.jit
 def wh(bbox: jnp.ndarray) -> jnp.ndarray:
     """From bbox get width and hieght tensor of shape (..., 2).
 
@@ -42,6 +45,7 @@ def wh(bbox: jnp.ndarray) -> jnp.ndarray:
     return bbox[..., 2:4]
 
 
+@jax.jit
 def xywh(bbox: jnp.ndarray) -> jnp.ndarray:
     """Get x-y coordinatestensor, width and height from a tensor.
 
@@ -51,6 +55,7 @@ def xywh(bbox: jnp.ndarray) -> jnp.ndarray:
     return bbox[..., :4]
 
 
+@jax.jit
 def xy_offset(bbox: jnp.ndarray) -> jnp.ndarray:
     """From bounding box get center poiont coordinates offset.
 
@@ -60,6 +65,7 @@ def xy_offset(bbox: jnp.ndarray) -> jnp.ndarray:
     return bbox[..., 4:6]
 
 
+@jax.jit
 def wh_exp(bbox: jnp.ndarray) -> jnp.ndarray:
     """From bbox get width and height exponent of shape (..., 2).
 
@@ -69,18 +75,31 @@ def wh_exp(bbox: jnp.ndarray) -> jnp.ndarray:
     return bbox[..., 6:8]
 
 
-def conf(bbox: jnp.ndarray, *, squeezed: bool = False) -> jnp.ndarray:
-    """Get object confidence from a tensor.
+@jax.jit
+def conf1d(bbox: jnp.ndarray) -> jnp.ndarray:
+    """Get object confidence from a tensor (squeezed).
+    Suppose the number of ranks of the input tensor is R, the #rank of the
+    output tensor will be R - 1 is `squeezed`.
+    Otherwise the #rank of the output will remain as R, and the last
+    rank contains only 1 dimension
 
     Args:
         bbox (jnp.ndarray): bounding box
-        squeezed (bool): suppose the number of ranks of the input tensor is R,
-            the #rank of the output tensor will be R - 1 is `squeezed = True`.
-            Otherwise the #rank of the output will remain as R, and the last
-            rank contains only 1 dimension
     """
-    if squeezed:
-        return bbox[..., 8]
+    return bbox[..., 8]
+
+
+@jax.jit
+def confnd(bbox: jnp.ndarray) -> jnp.ndarray:
+    """Get object confidence from a tensor (un-squeezed).
+    Suppose the number of ranks of the input tensor is R, the #rank of the
+    output tensor will be R - 1 is `squeezed`.
+    Otherwise the #rank of the output will remain as R, and the last
+    rank contains only 1 dimension
+
+    Args:
+        bbox (jnp.ndarray): bounding box
+    """
     return bbox[..., 8:9]
 
 
@@ -99,6 +118,7 @@ def class_sn(bbox: jnp.ndarray, *, squeezed: bool = False) -> jnp.ndarray:
     return bbox[..., 9:10]
 
 
+@jax.jit
 def class_logits(bbox: jnp.ndarray) -> jnp.ndarray:
     """Get class logits from a tensor / array.
 
@@ -108,11 +128,13 @@ def class_logits(bbox: jnp.ndarray) -> jnp.ndarray:
     return bbox[..., 10:]
 
 
+@jax.jit
 def area(bbox: jnp.ndarray) -> jnp.ndarray:
     """Calculate area of a bounding box."""
     return bbox[..., 2] * bbox[..., 3]
 
 
+@jax.jit
 def asdbox(bbox: jnp.ndarray) -> jnp.ndarray:
     """Transform a bounding box into a diagonal box."""
     return jnp.concatenate(
@@ -125,6 +147,7 @@ def asdbox(bbox: jnp.ndarray) -> jnp.ndarray:
     )
 
 
+@jax.jit
 def interarea(bbox_pred: jnp.ndarray, bbox_label: jnp.ndarray) -> jnp.ndarray:
     """Intersection area of two bounding boxes."""
     dbox_pred = asdbox(bbox_pred)
@@ -132,6 +155,7 @@ def interarea(bbox_pred: jnp.ndarray, bbox_label: jnp.ndarray) -> jnp.ndarray:
     return dbox.interarea(dbox_pred, dbox_label)
 
 
+@jax.jit
 def iou(bbox_pred: jnp.ndarray, bbox_label: jnp.ndarray) -> jnp.ndarray:
     """Calculate IoU of two bounding boxes."""
     area_pred = area(bbox_pred)
@@ -141,6 +165,7 @@ def iou(bbox_pred: jnp.ndarray, bbox_label: jnp.ndarray) -> jnp.ndarray:
     return (area_inter + EPSILON) / (area_union + EPSILON)
 
 
+@jax.jit
 def _inverse_sig(x: float) -> float:
     return math.log(x / (1 - x))
 
@@ -167,4 +192,4 @@ def objects(
     # get indices where class ID <> 0
     if from_logits:
         conf_th = _inverse_sig(conf_th)
-    return bbox[conf(bbox, squeezed=True) >= conf_th]
+    return bbox[conf1d(bbox) >= conf_th]

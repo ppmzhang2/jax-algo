@@ -25,6 +25,7 @@ ANCHORS_MAP = {
 }
 
 
+@jax.jit
 def xy(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get x-y coordinatestensor from a tensor / array.
 
@@ -34,6 +35,7 @@ def xy(pbox: jnp.ndarray) -> jnp.ndarray:
     return pbox[..., :2]
 
 
+@jax.jit
 def wh(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get width and height from a tensor / array.
 
@@ -43,6 +45,7 @@ def wh(pbox: jnp.ndarray) -> jnp.ndarray:
     return pbox[..., 2:4]
 
 
+@jax.jit
 def xywh(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get x-y coordinatestensor, width and height from a tensor / array.
 
@@ -52,6 +55,7 @@ def xywh(pbox: jnp.ndarray) -> jnp.ndarray:
     return pbox[..., :4]
 
 
+@jax.jit
 def conf(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get object confidence from a tensor / array.
 
@@ -61,6 +65,7 @@ def conf(pbox: jnp.ndarray) -> jnp.ndarray:
     return pbox[..., 4:5]
 
 
+@jax.jit
 def class_logits(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get class logits from a tensor / array.
 

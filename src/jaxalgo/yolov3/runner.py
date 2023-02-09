@@ -25,112 +25,126 @@ PATH_STATES = os.path.abspath(
     os.path.join(cfg.DATADIR, "model_yolov3_states.npy"))
 
 
-def model(x: jnp.ndarray) -> jnp.ndarray:
+def model_fn(x: jnp.ndarray) -> jnp.ndarray:
     """Apply network."""
     net = YoloV3(NUM_CLASS)
     return net(x)
 
 
-class TrainVar(NamedTuple):
+class ModelState(NamedTuple):
     """Contain variables (parameters + states) during training."""
     params: hk.Params
     states: hk.State
-    opt_states: optax.OptState
 
 
 def loss(
     params: hk.Params,
     states: hk.State,
-    modelf: hk.TransformedWithState,
+    xfm: hk.TransformedWithState,
     key: KeyArray,
     batch: Yolov3Batch,
 ) -> tuple[jnp.ndarray, hk.State]:
     """Loss function."""
 
-    (prd_s, prd_m, prd_l), states = modelf.apply(params, states, key,
-                                                 batch.image / 255.)
+    (prd_s, prd_m, prd_l), states = xfm.apply(params, states, key,
+                                              batch.image / 255.)
     los = (bias(prd_s, batch.label_s) + bias(prd_m, batch.label_m) +
            bias(prd_l, batch.label_l))
     return los, states
 
 
-def save_var(baseline: jnp.ndarray):
-    """Returns a function to save best model's variables.
+def best_state(baseline: jnp.ndarray):
+    """Returns a function to save / load model's states.
+    Save current model's state if if performs better than baseline, and load
+    saved state otherwise.
 
     Args:
         baseline (jnp.ndarray): baseline score
     """
 
-    def _saver(var: TrainVar, score: jnp.ndarray) -> jnp.ndarray:
-        if score > baseline:
-            shutil.rmtree(PATH_PARAMS, ignore_errors=True)
-            shutil.rmtree(PATH_STATES, ignore_errors=True)
-            jnp.save(PATH_PARAMS, var.params)
-            jnp.save(PATH_STATES, var.states)
-            return score
-        return baseline
+    def _helper(
+        var: ModelState,
+        score: jnp.ndarray,
+    ) -> tuple[jnp.ndarray, ModelState]:
+        if score <= baseline:
+            params = jnp.load(PATH_PARAMS)
+            states = jnp.load(PATH_STATES)
+            return baseline, ModelState(params, states)
 
-    return _saver
+        shutil.rmtree(PATH_PARAMS, ignore_errors=True)
+        shutil.rmtree(PATH_STATES, ignore_errors=True)
+        jnp.save(PATH_PARAMS, var.params)
+        jnp.save(PATH_STATES, var.states)
+        return score, var
+
+    return _helper
 
 
-def run_init(
+def model_init(
+    xfm: hk.TransformedWithState,
     key: KeyArray,
     batch: Yolov3Batch,
-) -> tuple[TrainVar, hk.TransformedWithState, optax.GradientTransformation]:
-    """Initialize runner."""
-    modelf = hk.transform_with_state(model)
-    optim = optax.adam(1e-3)
-    params, states = modelf.init(key, batch.image)
-    opt_states = optim.init(params)
-    return TrainVar(params, states, opt_states), modelf, optim
+) -> ModelState:
+    """Get parameters and states from a model."""
+    params, states = xfm.init(key, batch.image)
+    return ModelState(params, states)
 
 
-def trainer(n_epoch: int) -> None:
+def trainer(seed: int, n_epoch: int) -> None:
     """Trainer."""
 
     # @jax.jit
     def train_step(
-        var: TrainVar,
+        var: ModelState,
+        opt_state: optax.OptState,
         key: KeyArray,
         batch: Yolov3Batch,
-    ) -> tuple[TrainVar, jnp.ndarray]:
+    ) -> tuple[ModelState, optax.OptState, jnp.ndarray]:
         """Update parameters and states."""
         (los, states), grads = jax.value_and_grad(loss, has_aux=True)(
             var.params,
             var.states,
-            modelf,
+            xfm,
             key,
             batch,
         )
-        updates, opt_states = optim.update(grads, var.opt_states)
+        updates, opt_state = optim.update(grads, opt_state)
         params = optax.apply_updates(var.params, updates)
-        return TrainVar(params, states, opt_states), los
+        return ModelState(params, states), opt_state, los
 
     # @jax.jit
     def eval_loss(
-        var: TrainVar,
+        var: ModelState,
         key: KeyArray,
         batch: Yolov3Batch,
     ) -> jnp.ndarray:
         """Evaluate classification accuracy."""
-        los, _ = loss(var.params, var.states, modelf, key, batch)
+        los, _ = loss(var.params, var.states, xfm, key, batch)
         return los
 
-    seed = 0
-    key = jax.random.PRNGKey(seed)
     ds_train = CocoDataset(mode="TRAIN")
-    k_model, k_sample, k_evaldata, subkey = jax.random.split(key, num=4)
-    var, modelf, optim = run_init(k_model, ds_train.rand_batch(k_sample))
-    batch_test = CocoDataset(mode="TEST", batch=8).rand_batch(k_evaldata)
-    keys_epoch = jax.random.split(subkey, num=n_epoch)
-    save_var_fn = save_var(-jnp.inf)  # function to save variables
+    ds_test = CocoDataset(mode="TEST", batch=8)
+    key = jax.random.PRNGKey(seed)
+    k_model, k_data, subkey = jax.random.split(key, num=3)
 
-    for idx, k in enumerate(keys_epoch):
-        (k_train, k_eval, k_traindata) = jax.random.split(k, num=3)
-        var, los = train_step(var, k_train, ds_train.rand_batch(k_traindata))
+    best_state_fn = best_state(-jnp.inf)  # function to load variables
+    xfm = hk.transform_with_state(model_fn)
+    var = model_init(xfm, k_model, ds_train.rand_batch(k_data))
+    optim = optax.adam(1e-3)
+    opt_state = optim.init(var.params)
+
+    for idx, k in enumerate(jax.random.split(subkey, num=n_epoch)):
+        (k_train, k_eval, k_traindata, k_evaldata) = jax.random.split(k, num=4)
+        var, opt_state, los = train_step(
+            var,
+            opt_state,
+            k_train,
+            ds_train.rand_batch(k_traindata),
+        )
         LOGGER.info(f"training loss: {los}")
         if idx % 10 == 9:
+            batch_test = ds_test.rand_batch(k_evaldata)
             eval_los = eval_loss(var, k_eval, batch_test)
             LOGGER.info(f"evaluation loss: {eval_los}")
-            best_score = save_var_fn(var, -eval_los)
-            save_var_fn = save_var(best_score)
+            best_score, var = best_state_fn(var, -eval_los)
+            best_state_fn = best_state(best_score)
