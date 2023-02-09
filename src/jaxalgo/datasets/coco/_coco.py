@@ -175,7 +175,7 @@ class CocoDataset(BaseDataset):
     def rand_rowids(self, key: KeyArray) -> jnp.ndarray:
         return jax.random.choice(
             key,
-            jnp.arange(self._n_img),
+            jnp.arange(1, self._n_img + 1),
             shape=(self._batch, ),
             replace=False,
         )
