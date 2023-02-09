@@ -7,9 +7,11 @@ Computer vision deep learning algorithms implemented with
 ## Deploy
 
 ```sh
-# normal deploy
-make deploy
-# deploy development environment
+# CPU-only running environment deploy
+make deploy-cpu
+# CUDA running environment
+make deploy-gpu
+# dev environment
 make deploy-dev
 ```
 
@@ -18,5 +20,67 @@ make deploy-dev
 start training with the MNIST handwritten digit:
 
 ```sh
-pdm run jaxalgo train-resnet --n-epoch=100
+pdm run resnet train-resnet --n-epoch=100
+```
+
+## Object Detection with YOLOv3
+
+Preparing batabase:
+
+```sh
+# reset training DB
+pdm run yolov3 db-reset --train=True
+# reset test DB
+pdm run yolov3 db-reset --train=False
+```
+
+Create COCO CSV annotation files:
+
+```sh
+# training CSVs
+pdm run yolov3 coco-annot-to-csv \
+    --in-json="data/coco_instances_train2014.json" \
+    --img-folder="data/coco_train2014" \
+    --imgtag-csv="data/coco_imgtag_train2014.csv" \
+    --cate-csv="data/coco_cate_train2014.csv" \
+    --box-csv="data/coco_box_train2014.csv"
+# validation CSVs
+pdm run yolov3 coco-annot-to-csv \
+    --in-json="data/coco_instances_val2014.json" \
+    --img-folder="data/coco_val2014" \
+    --imgtag-csv="data/coco_imgtag_val2014.csv" \
+    --cate-csv="data/coco_cate_val2014.csv" \
+    --box-csv="data/coco_box_val2014.csv"
+```
+
+Load into sqlite annotation CSV files:
+
+```sh
+# load training annotation
+pdm run yolov3 load-coco-annot \
+    --imgtag-csv="./data/coco_imgtag_train2014.csv" \
+    --cate-csv="./data/coco_cate_train2014.csv" \
+    --box-csv="./data/coco_box_train2014.csv" \
+    --train=True
+# load validation annotation
+pdm run yolov3 load-coco-annot \
+    --imgtag-csv="./data/coco_imgtag_val2014.csv" \
+    --cate-csv="./data/coco_cate_val2014.csv" \
+    --box-csv="./data/coco_box_val2014.csv" \
+    --train=False
+```
+
+Re-create a single annotation / label table for YOLO training:
+
+```sh
+# insert training labels
+pdm run yolov3 create-labels --train=True
+# insert validation labels
+pdm run yolov3 create-labels --train=False
+```
+
+Train model:
+
+```sh
+pdm run yolov3 train-yolo --n-epoch=100
 ```

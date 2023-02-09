@@ -24,3 +24,6 @@ __pypackages__/
 
 # ide
 .idea/
+
+# pyenv
+.python-version
