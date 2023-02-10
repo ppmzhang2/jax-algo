@@ -1,6 +1,7 @@
 """Trainer and evaluator."""
 import logging
 import os
+import pickle
 import shutil
 from typing import NamedTuple
 
@@ -20,9 +21,9 @@ LOGGER = logging.getLogger(__name__)
 
 NUM_CLASS = 80
 PATH_PARAMS = os.path.abspath(
-    os.path.join(cfg.DATADIR, "model_yolov3_params.npy"))
+    os.path.join(cfg.DATADIR, "model_yolov3_params.pickle"))
 PATH_STATES = os.path.abspath(
-    os.path.join(cfg.DATADIR, "model_yolov3_states.npy"))
+    os.path.join(cfg.DATADIR, "model_yolov3_states.pickle"))
 
 
 def model_fn(x: jnp.ndarray) -> jnp.ndarray:
@@ -67,14 +68,17 @@ def best_state(baseline: jnp.ndarray):
         score: jnp.ndarray,
     ) -> tuple[jnp.ndarray, ModelState]:
         if score <= baseline:
-            params = jnp.load(PATH_PARAMS)
-            states = jnp.load(PATH_STATES)
+            with open(PATH_PARAMS, "rb") as f_params:
+                params = pickle.load(f_params)
+            with open(PATH_STATES, "rb") as f_states:
+                states = pickle.load(f_states)
             return baseline, ModelState(params, states)
-
         shutil.rmtree(PATH_PARAMS, ignore_errors=True)
         shutil.rmtree(PATH_STATES, ignore_errors=True)
-        jnp.save(PATH_PARAMS, var.params)
-        jnp.save(PATH_STATES, var.states)
+        with open(PATH_PARAMS, "wb") as f_params:
+            pickle.dump(var.params, f_params, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(PATH_STATES, "wb") as f_states:
+            pickle.dump(var.states, f_states, protocol=pickle.HIGHEST_PROTOCOL)
         return score, var
 
     return _helper
