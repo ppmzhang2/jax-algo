@@ -5,7 +5,7 @@ import logging
 import click
 
 from jaxalgo.datasets import CocoAnnotation
-from jaxalgo.yolov3.runner import trainer
+from jaxalgo.yolov3 import runner
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,5 +59,39 @@ def create_labels(train: bool) -> None:
 @click.command()
 @click.option("--seed", type=click.INT, required=True)
 @click.option("--n-epoch", type=click.INT, required=True)
-def train_yolo(seed: int, n_epoch: int) -> None:
-    return trainer(seed, n_epoch)
+@click.option("--lr", type=click.FLOAT, required=True, help="learning rate")
+@click.option("--batch-train", type=click.INT, required=True)
+@click.option("--batch-valid", type=click.INT, required=True)
+@click.option("--eval-span", type=click.INT, required=True)
+def train(
+    seed: int,
+    n_epoch: int,
+    lr: float,
+    batch_train: int,
+    batch_valid: int,
+    eval_span: int,
+) -> None:
+    return runner.train(seed, n_epoch, lr, batch_train, batch_valid, eval_span)
+
+
+@click.command()
+@click.option("--path-params", type=click.STRING, required=True)
+@click.option("--path-states", type=click.STRING, required=True)
+@click.option("--seed", type=click.INT, required=True)
+@click.option("--n-epoch", type=click.INT, required=True)
+@click.option("--lr", type=click.FLOAT, required=True, help="learning rate")
+@click.option("--batch-train", type=click.INT, required=True)
+@click.option("--batch-valid", type=click.INT, required=True)
+@click.option("--eval-span", type=click.INT, required=True)
+def tuning(
+    path_params: str,
+    path_states: str,
+    seed: int,
+    n_epoch: int,
+    lr: float,
+    batch_train: int,
+    batch_valid: int,
+    eval_span: int,
+) -> None:
+    return runner.tuning(path_params, path_states, seed, n_epoch, lr,
+                         batch_train, batch_valid, eval_span)
