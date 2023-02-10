@@ -7,6 +7,7 @@ shape: [..., M], where M >= 6:
 format: (x_min, y_min, x_max, y_max, [conf], classid, [logit_1, logit_2, ...])
 """
 import cv2
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -24,16 +25,19 @@ FONTSCALE = 0.35
 CATE_MAP = {sn: name for sn, _, name in COCO_CATE}
 
 
+@jax.jit
 def pmax(dbox: jnp.ndarray) -> jnp.ndarray:
     """Get bottom-right point from a diagonal box."""
     return dbox[..., 2:4]
 
 
+@jax.jit
 def pmin(dbox: jnp.ndarray) -> jnp.ndarray:
     """Get top-left point from a diagonal box."""
     return dbox[..., 0:2]
 
 
+@jax.jit
 def interarea(dbox_pred: jnp.ndarray, dbox_label: jnp.ndarray) -> jnp.ndarray:
     """Get intersection area of two Diagonal boxes.
 

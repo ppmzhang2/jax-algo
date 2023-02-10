@@ -62,6 +62,7 @@ def _bce_logits(label: jnp.ndarray, logit: jnp.ndarray) -> jnp.ndarray:
             jnp.log(1 + jnp.exp(-jnp.abs(logit))))
 
 
+@jax.jit
 def bce(lab: jnp.ndarray, prd: jnp.ndarray, logit: bool = True) -> jnp.ndarray:
     """Computes binary cross entropy either given logits or probability."""
     if logit:
@@ -71,6 +72,7 @@ def bce(lab: jnp.ndarray, prd: jnp.ndarray, logit: bool = True) -> jnp.ndarray:
     return jnp.mean(raw, axis=-1)
 
 
+@jax.jit
 def mse(lab: jnp.ndarray, prd: jnp.ndarray) -> jnp.ndarray:
     """Mean Squared Error."""
     return jnp.mean(jnp.square(lab - prd), axis=-1)
@@ -87,8 +89,8 @@ def bias(
     """Calculate loss."""
     pred_ = pbox.scaled_bbox(pred)
 
-    indices_obj = bbox.conf(label, squeezed=True) > conf_th
-    indices_bgd = bbox.conf(label, squeezed=True) < conf_th
+    indices_obj = bbox.conf1d(label) > conf_th
+    indices_bgd = bbox.conf1d(label) < conf_th
 
     prd_obj = pred_[indices_obj]
     prd_bgd = pred_[indices_bgd]
@@ -99,13 +101,13 @@ def bias(
     # background loss
     # TBD: weight with confidence
     bias_bgd = (lambda_bgd *
-                jnp.mean(bce(bbox.conf(lab_bgd), bbox.conf(prd_bgd))))
+                jnp.mean(bce(bbox.confnd(lab_bgd), bbox.confnd(prd_bgd))))
 
     # object loss
     # label probability should be `1 * IOU` score according to the YOLO paper
     # TBD: weight with confidence
     bias_obj = (lambda_obj *
-                jnp.mean(bce(ious * bbox.conf(lab_obj), bbox.conf(prd_obj))))
+                jnp.mean(bce(ious * bbox.confnd(lab_obj), bbox.confnd(prd_obj))))
 
     # object center coordinates (xy) loss
     bias_xy = (lambda_coord *

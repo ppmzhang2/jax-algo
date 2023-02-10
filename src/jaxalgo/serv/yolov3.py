@@ -57,6 +57,7 @@ def create_labels(train: bool) -> None:
 
 
 @click.command()
+@click.option("--seed", type=click.INT, required=True)
 @click.option("--n-epoch", type=click.INT, required=True)
-def train_yolo(n_epoch: int) -> None:
-    return trainer(n_epoch)
+def train_yolo(seed: int, n_epoch: int) -> None:
+    return trainer(seed, n_epoch)

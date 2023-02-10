@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import pytest
 import haiku as hk
 
-from jaxalgo.yolov3.runner import model
+from jaxalgo.yolov3.runner import model_fn
 
 N = 2
 N_CLASS = 80
@@ -39,7 +39,7 @@ dataset = [
 @pytest.mark.parametrize("data", dataset)
 def test_resnet_model(data: Data) -> NoReturn:
     """Test `netv3` YOLO model."""
-    modelf = hk.transform_with_state(model)
+    modelf = hk.transform_with_state(model_fn)
     params, states = modelf.init(key, data.x)
     (t1, t2, t3), _ = modelf.apply(params, states, key, data.x)
 

@@ -82,5 +82,5 @@ pdm run yolov3 create-labels --train=False
 Train model:
 
 ```sh
-pdm run yolov3 train-yolo --n-epoch=100
+pdm run yolov3 train-yolo --seed=0 --n-epoch=100
 ```
