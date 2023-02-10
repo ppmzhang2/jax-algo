@@ -165,7 +165,7 @@ def iou(bbox_pred: jnp.ndarray, bbox_label: jnp.ndarray) -> jnp.ndarray:
     return (area_inter + EPSILON) / (area_union + EPSILON)
 
 
-@jax.jit
+# @jax.jit
 def _inverse_sig(x: float) -> float:
     return math.log(x / (1 - x))
 
@@ -193,3 +193,8 @@ def objects(
     if from_logits:
         conf_th = _inverse_sig(conf_th)
     return bbox[conf1d(bbox) >= conf_th]
+
+
+def classof(bbox: jnp.ndarray, sn: int) -> jnp.ndarray:
+    """Filter a bbox by class SN."""
+    return bbox[class_sn(bbox, squeezed=True) == sn]
