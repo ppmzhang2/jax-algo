@@ -81,25 +81,47 @@ def save_state(var: ModelState, path_params: str, path_states: str) -> None:
         pickle.dump(var.states, f_states, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def best_state(bast_eval_score: jnp.ndarray):
+def best_state(best_eval_score: jnp.ndarray):
     """Returns a function to save / load model's states.
     Save current model's state if if performs better than baseline, and load
     saved state otherwise.
 
     Args:
-        bast_eval_score (jnp.ndarray): previous best evaluation score
+        best_eval_score (jnp.ndarray): previous best evaluation score
     """
 
     def _helper(
         var: ModelState,
         eval_score: jnp.ndarray,
     ) -> tuple[jnp.ndarray, ModelState]:
-        if eval_score <= bast_eval_score:
+        if eval_score <= best_eval_score:
             LOGGER.debug("---- restore to previous best...")
-            return bast_eval_score, load_state(PATH_PARAMS, PATH_STATES)
+            return best_eval_score, load_state(PATH_PARAMS, PATH_STATES)
         LOGGER.debug("---- saving new best state...")
         save_state(var, PATH_PARAMS, PATH_STATES)
         return eval_score, var
+
+    return _helper
+
+
+def state_checkpoint(best_eval_score: jnp.ndarray):
+    """Returns a checkpoint function to save model's states.
+    Save current model's state if if performs better than baseline.
+
+    Args:
+        best_eval_score (jnp.ndarray): previous best evaluation score
+    """
+
+    def _helper(
+        var: ModelState,
+        eval_score: jnp.ndarray,
+    ) -> jnp.ndarray:
+        if eval_score <= best_eval_score:
+            LOGGER.debug(f"---- best is still {best_eval_score:5.4f}")
+            return best_eval_score
+        LOGGER.debug(f"---- new best state: {eval_score:5.4f}")
+        save_state(var, PATH_PARAMS, PATH_STATES)
+        return eval_score
 
     return _helper
 
@@ -244,8 +266,8 @@ def tuning(
             batch_test = ds_test.rand_batch(k_evaldata)
             eval_los, _ = loss(var.params, var.states, xfm, k_eval, batch_test)
             LOGGER.info(f"evaluation loss: {eval_los}")
-            best_state_fn = best_state(best_score)
-            best_score, var = best_state_fn(var, -eval_los)
+            checkpoint_fn = state_checkpoint(best_score)
+            best_score = checkpoint_fn(var, -eval_los)
 
         var, opt_state, train_los = train_step_fn(
             var,

@@ -31,7 +31,8 @@ ANCHORS_MAP = {
 
 def _smooth(label: jnp.ndarray, alpha: float = 1e-3):
     """Label smoothing ported from tensorflow."""
-    return label * (1.0 - alpha) + 0.5 * alpha
+    label_ = jnp.clip(label, 0.0, 1.0)
+    return label_ * (1.0 - alpha) + 0.5 * alpha
 
 
 def _log(prob: jnp.ndarray, epsilon: float = 1e-3) -> jnp.ndarray:
@@ -44,7 +45,6 @@ def _bce_prob(label: jnp.ndarray, prob: jnp.ndarray) -> jnp.ndarray:
 
     z * log(x) + (1 - z) * log(1-x)
     """
-    label = _smooth(label)
     return -label * _log(prob) - (1 - label) * _log(1 - prob)
 
 
@@ -57,13 +57,13 @@ def _bce_logits(label: jnp.ndarray, logit: jnp.ndarray) -> jnp.ndarray:
     equivalent to:
         z * -log_sigmoid(x) + (1 - z) * -log_sigmoid(-x)
     """
-    label = _smooth(label)
     return (jax.nn.relu(logit) - logit * label +
             jnp.log(1 + jnp.exp(-jnp.abs(logit))))
 
 
 def bce(lab: jnp.ndarray, prd: jnp.ndarray, logit: bool = True) -> jnp.ndarray:
     """Computes binary cross entropy either given logits or probability."""
+    lab = _smooth(lab)
     if logit:
         raw = _bce_logits(lab, prd)
     else:
@@ -80,24 +80,25 @@ def fce(
     lab: jnp.ndarray,
     prd: jnp.ndarray,
     *,
-    alpha: float = 0.25,
     logit: bool = True,
 ) -> jnp.ndarray:
     """Computes focal cross entropy either given logits or probability."""
+    lab = _smooth(lab)
     if logit:
         raw = _bce_logits(lab, prd)
     else:
         raw = _bce_prob(lab, prd)
     pt = jnp.exp(-raw)
+    alpha = (2.0 * lab + 1.0) * 0.25  # 0.25 for 0, 0.75 for 1
     return jnp.mean(alpha * jnp.power((1 - pt), 2) * raw, axis=-1)
 
 
 def bias(
     pred: jnp.ndarray,
     label: jnp.ndarray,
-    lambda_obj: float = 1.0,
+    lambda_obj: float = 2.0,
     lambda_bgd: float = 1.0,
-    lambda_coord: float = 1.0,
+    lambda_coord: float = 2.0,
     conf_th: float = 0.5,
 ) -> jnp.ndarray:
     """Calculate loss."""
@@ -105,6 +106,8 @@ def bias(
 
     indices_obj = (bbox.conf1d(label) > conf_th).astype(jnp.float32)
     indices_bgd = (bbox.conf1d(label) < conf_th).astype(jnp.float32)
+    n_obj = indices_obj.sum()
+    n_bgd = indices_bgd.sum()
 
     ious = bbox.iou(pred_, label)[..., jnp.newaxis]
     # background loss
@@ -134,6 +137,7 @@ def bias(
     # f"    XY Bias={bias_xy};\n"
     # f"    WH Bias={bias_wh};\n"
     # f"    Class Bias={np.array(bias_class)}")
-    return (lambda_bgd * jnp.mean(bias_bgd) + lambda_obj * jnp.mean(bias_obj) +
-            lambda_coord * jnp.mean(bias_xy) + jnp.mean(bias_wh) +
-            jnp.mean(bias_class))
+    return (lambda_bgd * jnp.sum(bias_bgd) / n_bgd +
+            lambda_obj * jnp.sum(bias_obj) / n_obj +
+            lambda_coord * jnp.sum(bias_xy) / n_obj +
+            jnp.sum(bias_wh) / n_obj + jnp.sum(bias_class) / n_obj)
