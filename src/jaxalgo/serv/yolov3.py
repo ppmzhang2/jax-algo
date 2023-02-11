@@ -83,6 +83,7 @@ def train(
 @click.option("--batch-train", type=click.INT, required=True)
 @click.option("--batch-valid", type=click.INT, required=True)
 @click.option("--eval-span", type=click.INT, required=True)
+@click.option("--eval-loop", type=click.INT, required=True)
 def tuning(
     path_params: str,
     path_states: str,
@@ -92,6 +93,7 @@ def tuning(
     batch_train: int,
     batch_valid: int,
     eval_span: int,
+    eval_loop: int,
 ) -> None:
     return runner.tuning(path_params, path_states, seed, n_epoch, lr,
-                         batch_train, batch_valid, eval_span)
+                         batch_train, batch_valid, eval_span, eval_loop)

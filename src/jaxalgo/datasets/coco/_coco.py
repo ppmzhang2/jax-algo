@@ -174,13 +174,18 @@ class CocoDataset(BaseDataset):
 
         return tuple(seq_label)
 
-    def rand_rowids(self, key: KeyArray) -> jnp.ndarray:
+    def _rand_rowids(self, key: KeyArray) -> jnp.ndarray:
         return jax.random.choice(
             key,
             jnp.arange(1, self._n_img + 1),
             shape=(self._batch, ),
             replace=False,
         )
+
+    def _top_rowids(self, offset: int) -> jnp.ndarray:
+        start = min(offset + 1, self._n_img)
+        stop = min(offset + 1 + self._batch, self._n_img + 1)
+        return jnp.arange(start, stop)
 
     def _get_img(self, rowid: int, size: int) -> tuple[int, np.ndarray]:
         row = self._dao.lookup_image_rowid(rowid)
@@ -190,9 +195,9 @@ class CocoDataset(BaseDataset):
         return (row.imageid,
                 cv2.resize(rgb, (size, size), interpolation=cv2.INTER_AREA))
 
-    def rand_batch(self, key: KeyArray) -> Yolov3Batch:
+    def _fetch(self, rowids: jnp.ndarray) -> Yolov3Batch:
         images, labels_s, labels_m, labels_l = [], [], [], []
-        for i in self.rand_rowids(key):
+        for i in rowids:
             img_id, rgb_resized = self._get_img(i.item(), V3_INRESOLUT)
             label_s, label_m, label_l = self.label_by_id(img_id=img_id)
             images += [rgb_resized]
@@ -205,3 +210,9 @@ class CocoDataset(BaseDataset):
         labels_m_ = jnp.stack(labels_m)
         labels_l_ = jnp.stack(labels_l)
         return Yolov3Batch(images_, labels_s_, labels_m_, labels_l_)
+
+    def rand_batch(self, key: KeyArray) -> Yolov3Batch:
+        return self._fetch(self._rand_rowids(key))
+
+    def top_batch(self, offset: int) -> Yolov3Batch:
+        return self._fetch(self._top_rowids(offset))
