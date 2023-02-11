@@ -26,6 +26,14 @@ PATH_STATES = os.path.abspath(
     os.path.join(cfg.DATADIR, "model_yolov3_states.pickle"))
 
 
+def get_var_path(epoch: int, *, params: bool = True):
+    if params:
+        return os.path.abspath(
+            os.path.join(cfg.DATADIR, f"model_yolov3_params_{epoch}.pickle"))
+    return os.path.abspath(
+        os.path.join(cfg.DATADIR, f"model_yolov3_states_{epoch}.pickle"))
+
+
 def model_fn(x: jnp.ndarray) -> jnp.ndarray:
     """Apply network."""
     net = YoloV3(NUM_CLASS)
@@ -73,23 +81,25 @@ def save_state(var: ModelState, path_params: str, path_states: str) -> None:
         pickle.dump(var.states, f_states, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def best_state(baseline: jnp.ndarray):
+def best_state(bast_eval_score: jnp.ndarray):
     """Returns a function to save / load model's states.
     Save current model's state if if performs better than baseline, and load
     saved state otherwise.
 
     Args:
-        baseline (jnp.ndarray): baseline score
+        bast_eval_score (jnp.ndarray): previous best evaluation score
     """
 
     def _helper(
         var: ModelState,
-        score: jnp.ndarray,
+        eval_score: jnp.ndarray,
     ) -> tuple[jnp.ndarray, ModelState]:
-        if score <= baseline:
-            return baseline, load_state(PATH_PARAMS, PATH_STATES)
+        if eval_score <= bast_eval_score:
+            LOGGER.debug("---- restore to previous best...")
+            return bast_eval_score, load_state(PATH_PARAMS, PATH_STATES)
+        LOGGER.debug("---- saving new best state...")
         save_state(var, PATH_PARAMS, PATH_STATES)
-        return score, var
+        return eval_score, var
 
     return _helper
 
@@ -116,7 +126,7 @@ def train_step(
         batch: Yolov3Batch,
     ) -> tuple[ModelState, optax.OptState, jnp.ndarray]:
         """Update parameters and states."""
-        (los, states), grads = jax.value_and_grad(loss, has_aux=True)(
+        (train_los, states), grads = jax.value_and_grad(loss, has_aux=True)(
             var.params,
             var.states,
             xfm,
@@ -125,7 +135,7 @@ def train_step(
         )
         updates, opt_state = optim.update(grads, opt_state)
         params = optax.apply_updates(var.params, updates)
-        return ModelState(params, states), opt_state, los
+        return ModelState(params, states), opt_state, train_los
 
     return _train_step_fn
 
@@ -149,7 +159,7 @@ def train(
         eval_span (int): span of epochs between each evaluation
     """
 
-    # @jax.jit
+    @jax.jit
     def train_step_fn(
         var: ModelState,
         opt_state: optax.OptState,
@@ -164,7 +174,6 @@ def train(
     key = jax.random.PRNGKey(seed)
     k_model, k_data, subkey = jax.random.split(key, num=3)
 
-    best_state_fn = best_state(-jnp.inf)  # function to load variables
     xfm = hk.transform_with_state(model_fn)
     var = model_init(xfm, k_model, ds_train.rand_batch(k_data))
     optim = optax.adam(lr)
@@ -172,19 +181,18 @@ def train(
 
     for idx, k in enumerate(jax.random.split(subkey, num=n_epoch)):
         (k_train, k_eval, k_traindata, k_evaldata) = jax.random.split(k, num=4)
-        var, opt_state, los = train_step_fn(
+        var, opt_state, train_los = train_step_fn(
             var,
             opt_state,
             k_train,
             ds_train.rand_batch(k_traindata),
         )
-        LOGGER.info(f"training loss: {los}")
+        LOGGER.info(f"training loss: {train_los}")
         if idx % eval_span == eval_span - 1:
             batch_test = ds_test.rand_batch(k_evaldata)
             eval_los, _ = loss(var.params, var.states, xfm, k_eval, batch_test)
             LOGGER.info(f"evaluation loss: {eval_los}")
-            best_score, var = best_state_fn(var, -eval_los)
-            best_state_fn = best_state(best_score)
+            save_state(var, get_var_path(idx), get_var_path(idx, params=False))
 
 
 def tuning(
@@ -210,7 +218,7 @@ def tuning(
         eval_span (int): span of epochs between each evaluation
     """
 
-    # @jax.jit
+    @jax.jit
     def train_step_fn(
         var: ModelState,
         opt_state: optax.OptState,
@@ -224,11 +232,11 @@ def tuning(
     ds_train = CocoDataset(mode="TRAIN", batch=batch_train)
     ds_test = CocoDataset(mode="TEST", batch=batch_valid)
 
-    best_state_fn = best_state(-jnp.inf)  # function to load variables
     xfm = hk.transform_with_state(model_fn)
     optim = optax.adam(lr)
     opt_state = optim.init(var.params)
 
+    best_score = -9999.9
     key = jax.random.PRNGKey(seed)
     for idx, k in enumerate(jax.random.split(key, num=n_epoch)):
         (k_train, k_eval, k_traindata, k_evaldata) = jax.random.split(k, num=4)
@@ -236,13 +244,13 @@ def tuning(
             batch_test = ds_test.rand_batch(k_evaldata)
             eval_los, _ = loss(var.params, var.states, xfm, k_eval, batch_test)
             LOGGER.info(f"evaluation loss: {eval_los}")
-            best_score, var = best_state_fn(var, -eval_los)
             best_state_fn = best_state(best_score)
+            best_score, var = best_state_fn(var, -eval_los)
 
-        var, opt_state, los = train_step_fn(
+        var, opt_state, train_los = train_step_fn(
             var,
             opt_state,
             k_train,
             ds_train.rand_batch(k_traindata),
         )
-        LOGGER.info(f"training loss: {los}")
+        LOGGER.info(f"training loss: {train_los}")

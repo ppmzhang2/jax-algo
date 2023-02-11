@@ -11,7 +11,8 @@ data format:
 
 TODO: data augmentation
 """
-import math
+from math import log
+from math import modf
 from typing import NamedTuple
 
 import cv2
@@ -56,6 +57,7 @@ STRIDES = [int(V3_INRESOLUT // n) for n in V3_GRIDSIZE]
 
 N_IMG_TEST = 40504
 N_IMG_TRAIN = 82783
+E = 1e-4
 
 # map from COCO original class ID to class serial number
 CATEID_MAP = {cateid: sn for sn, cateid, _ in COCO_CATE}
@@ -148,15 +150,15 @@ class CocoDataset(BaseDataset):
                 stride = STRIDES[idx_scale]
                 x, y = row.x * V3_INRESOLUT, row.y * V3_INRESOLUT
                 # offset and top-left grid cell width index
-                x_offset, i_ = math.modf(x / stride)
+                x_offset, i_ = modf(x / stride)
                 # offset and top-left grid cell height index
-                y_offset, j_ = math.modf(y / stride)
+                y_offset, j_ = modf(y / stride)
                 i, j = int(i_), int(j_)
                 w, h = row.w * V3_INRESOLUT, row.h * V3_INRESOLUT
                 # reverse operation of anchor_w * e^{w_exp}
-                w_exp = math.log(row.w / ANCHORS[idx_scale, idx_measure][0])
+                w_exp = log(row.w / ANCHORS[idx_scale, idx_measure][0] + E)
                 # reverse operation of anchor_h * e^{h_exp}
-                h_exp = math.log(row.h / ANCHORS[idx_scale, idx_measure][1])
+                h_exp = log(row.h / ANCHORS[idx_scale, idx_measure][1] + E)
                 cate_sn = CATEID_MAP[row.cateid]
                 # fill in
                 seq_label[idx_scale][i, j, idx_measure, 0] = x

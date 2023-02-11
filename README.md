@@ -82,8 +82,8 @@ pdm run yolov3 create-labels --train=False
 Train model:
 
 ```sh
-pdm run yolov3 train --seed=0 --n-epoch=1000 --lr=0.001 \
-    --batch-train=4 --batch-valid=128 --eval-span=10
+pdm run yolov3 train --seed=0 --n-epoch=20000 --lr=0.001 \
+    --batch-train=16 --batch-valid=16 --eval-span=8
 ```
 
 Fine-tuning pre-trained model:
@@ -91,6 +91,6 @@ Fine-tuning pre-trained model:
 ```sh
 pdm run yolov3 tuning --path-params=data/model_yolov3_params_20230210.pickle \
     --path-states=data/model_yolov3_states_20230210.pickle \
-    --seed=0 --n-epoch=1000 --lr=0.001 \
-    --batch-train=4 --batch-valid=128 --eval-span=10
+    --seed=42 --n-epoch=10000 --lr=0.00001 \
+    --batch-train=4 --batch-valid=64 --eval-span=8
 ```
