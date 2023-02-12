@@ -29,6 +29,10 @@ ANCHORS_MAP = {
 }
 
 
+def _all_but_last_dim(x: jnp.ndarray) -> tuple:
+    return tuple(range(x.ndim)[1:])
+
+
 def _smooth(label: jnp.ndarray, alpha: float = 1e-3):
     """Label smoothing ported from tensorflow."""
     label_ = jnp.clip(label, 0.0, 1.0)
@@ -61,28 +65,35 @@ def _bce_logits(label: jnp.ndarray, logit: jnp.ndarray) -> jnp.ndarray:
             jnp.log(1 + jnp.exp(-jnp.abs(logit))))
 
 
-def bce(lab: jnp.ndarray, prd: jnp.ndarray, logit: bool = True) -> jnp.ndarray:
-    """Computes binary cross entropy either given logits or probability."""
+def bce(
+    lab: jnp.ndarray,
+    prd: jnp.ndarray,
+    mask: jnp.ndarray,
+    *,
+    logit: bool = True,
+) -> jnp.ndarray:
+    """Computes sum binary cross entropy either given logits or probability."""
     lab = _smooth(lab)
     if logit:
         raw = _bce_logits(lab, prd)
     else:
         raw = _bce_prob(lab, prd)
-    return jnp.mean(raw, axis=-1)
+    return jnp.sum(raw * mask, axis=_all_but_last_dim(raw))
 
 
-def mse(lab: jnp.ndarray, prd: jnp.ndarray) -> jnp.ndarray:
-    """Mean Squared Error."""
-    return jnp.mean(jnp.square(lab - prd), axis=-1)
+def sse(lab: jnp.ndarray, prd: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
+    """Sum Squared Error."""
+    return jnp.sum(jnp.square(lab - prd) * mask, axis=_all_but_last_dim(lab))
 
 
 def fce(
     lab: jnp.ndarray,
     prd: jnp.ndarray,
+    mask: jnp.ndarray,
     *,
     logit: bool = True,
 ) -> jnp.ndarray:
-    """Computes focal cross entropy either given logits or probability."""
+    """Compute sum focal cross entropy either given logits or probability."""
     lab = _smooth(lab)
     if logit:
         raw = _bce_logits(lab, prd)
@@ -90,56 +101,65 @@ def fce(
         raw = _bce_prob(lab, prd)
     pt = jnp.exp(-raw)
     alpha = (2.0 * lab + 1.0) * 0.25  # 0.25 for 0, 0.75 for 1
-    return jnp.mean(alpha * jnp.power((1 - pt), 2) * raw, axis=-1)
+    return jnp.sum(alpha * jnp.power((1 - pt), 2) * raw * mask,
+                   axis=_all_but_last_dim(raw))
 
 
 def bias(
     pred: jnp.ndarray,
     label: jnp.ndarray,
-    lambda_obj: float = 2.0,
-    lambda_bgd: float = 5.0,
-    lambda_coord: float = 2.0,
-    lambda_class: float = 2.0,
+    lambda_obj: float = 1.0,
+    lambda_bgd: float = 1.0,
+    lambda_xy: float = 1.0,
+    lambda_wh: float = 1.0,
+    lambda_class: float = 1.0,
     conf_th: float = 0.5,
 ) -> jnp.ndarray:
     """Calculate loss."""
     pred_ = pbox.scaled_bbox(pred)
 
-    indices_obj = (bbox.conf1d(label) > conf_th).astype(jnp.float32)
-    indices_bgd = (bbox.conf1d(label) < conf_th).astype(jnp.float32)
-    n_obj = indices_obj.sum()
-    n_bgd = indices_bgd.sum()
+    mask_obj = (bbox.confnd(label) > conf_th).astype(jnp.float32)
+    # TODO: multiply best iou
+    mask_bgd = (bbox.confnd(label) < conf_th).astype(jnp.float32)
 
     ious = bbox.iou(pred_, label)[..., jnp.newaxis]
+
+    conf_bias_iou = (2.0 - bbox.area(label) / 416**2)[..., jnp.newaxis]
+    bias_iou = jnp.sum(conf_bias_iou * mask_obj * (1.0 - ious))
+
+    conf_focal = jnp.power(
+        bbox.confnd(label) - jax.nn.sigmoid(bbox.confnd(pred_)), 2)
+
     # background loss
-    # TBD: weight with confidence
-    bias_bgd = indices_bgd * fce(bbox.confnd(label), bbox.confnd(pred_))
+    bias_bgd = bce(bbox.confnd(label), bbox.confnd(pred_),
+                   mask_bgd * conf_focal)
 
     # object loss
     # label probability should be `1 * IOU` score according to the YOLO paper
     # TBD: weight with confidence
-    bias_obj = indices_obj * fce(ious * bbox.confnd(label), bbox.confnd(pred_))
+    bias_obj = bce(ious * bbox.confnd(label), bbox.confnd(pred_),
+                   mask_obj * conf_focal)
 
     # object center coordinates (xy) loss
-    bias_xy = indices_obj * mse(bbox.xy_offset(label), bbox.xy_offset(pred_))
+    bias_xy = sse(bbox.xy_offset(label), bbox.xy_offset(pred_), mask_obj)
 
     # box size (wh) loss
-    bias_wh = indices_obj * mse(bbox.wh_exp(label), bbox.wh_exp(pred_))
+    bias_wh = sse(bbox.wh_exp(label), bbox.wh_exp(pred_), mask_obj)
 
     # class loss
-    bias_class = indices_obj * bce(
+    bias_class = bce(
         onehot_offset(bbox.class_sn(label, squeezed=True), N_CLASS),
         bbox.class_logits(pred_),
+        mask_obj,
     )
 
     # LOGGER.info("\n"
-    # f"    Background Bias={bias_bgd};\n"
-    # f"    Object Bias={bias_obj};\n"
-    # f"    XY Bias={bias_xy};\n"
-    # f"    WH Bias={bias_wh};\n"
-    # f"    Class Bias={np.array(bias_class)}")
-    return (lambda_bgd * jnp.sum(bias_bgd) / n_bgd +
-            lambda_obj * jnp.sum(bias_obj) / n_obj +
-            lambda_coord * jnp.sum(bias_xy) / n_obj +
-            jnp.sum(bias_wh) / n_obj +
-            lambda_class * jnp.sum(bias_class) / n_obj)
+    #             f"    IoU Bias={bias_iou};\n"
+    #             f"    Background Bias={bias_bgd};\n"
+    #             f"    Object Bias={bias_obj};\n"
+    #             f"    XY Bias={bias_xy};\n"
+    #             f"    WH Bias={bias_wh};\n"
+    #             f"    Class Bias={bias_class}")
+    return (lambda_bgd * jnp.mean(bias_bgd) + lambda_obj * jnp.mean(bias_obj) +
+            lambda_xy * jnp.mean(bias_xy) + lambda_wh * jnp.mean(bias_wh) +
+            lambda_class * jnp.mean(bias_class) + bias_iou)

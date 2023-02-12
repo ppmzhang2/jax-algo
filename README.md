@@ -91,6 +91,6 @@ Fine-tuning pre-trained model:
 ```sh
 pdm run yolov3 tuning --path-params=data/model_yolov3_params.pickle \
     --path-states=data/model_yolov3_states.pickle \
-    --seed=0 --n-epoch=10000 --lr=0.00001 \
-    --batch-train=16 --batch-valid=32 --eval-span=1 --eval-loop=256
+    --seed=0 --n-epoch=10000 --lr=0.001 \
+    --batch-train=16 --batch-valid=32 --eval-span=10 --eval-loop=256
 ```

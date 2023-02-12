@@ -1,4 +1,3 @@
-import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -17,23 +16,27 @@ def nms_1class(boxes: jnp.ndarray, iou_th: float) -> jnp.ndarray:
         boxes (jnp.ndarray): 2nd order tensor
         iou_th (float): IoU threshold
     """
+
+    def _valid_indices(
+        idx: int,
+        indices: jnp.ndarray,
+        boxes: jnp.ndarray,
+        iou_th: float,
+        acc: jnp.ndarray,
+    ) -> tuple[jnp.ndarray, tuple]:
+        """Returns valid indices"""
+        ious = bbox.iou(boxes[idx, :], boxes[indices, :])
+        return indices[ious < iou_th], jnp.array([*acc, idx])
+
     confs = bbox.conf1d(boxes)
-    # indices to keep, only deleted ones should be removed
-    indices_keep = jnp.argsort(-confs, axis=-1)
-    # indices for tracking, both added and deleted should be removed from it
-    indices_track = jnp.copy(indices_keep)
+    indices_ = jnp.argsort(-confs, axis=-1)
 
-    for idx1 in indices_keep:
-        if indices_track.size == 0:
-            break
-        indices_track = indices_track[indices_track != idx1]
-        for idx2 in indices_track:
-            iou_ = bbox.iou(boxes[idx1], boxes[idx2])
-            if iou_ > iou_th:
-                indices_keep = indices_keep[indices_keep != idx2]
-                indices_track = indices_track[indices_track != idx2]
-
-    return boxes[indices_keep]
+    acc = jnp.array([])
+    while True:
+        if indices_.size == 0:
+            return boxes[acc]
+        idx, indices_ = indices_[0], indices_[1:]  # idx will always be saved
+        indices_, acc = _valid_indices(idx, indices_, boxes, iou_th, acc)
 
 
 def nms(boxes: jnp.ndarray, iou_th: float) -> jnp.ndarray:

@@ -68,21 +68,6 @@ def loss(
     return los, states
 
 
-def l2loss(
-    params: hk.Params,
-    states: hk.State,
-    xfm: hk.TransformedWithState,
-    key: KeyArray,
-    batch: Yolov3Batch,
-    *,
-    lambda_reg: float = 1e-4,
-) -> tuple[jnp.ndarray, hk.State]:
-    """Loss function with L2 regulation."""
-
-    los, states = loss(params, states, xfm, key, batch)
-    return los + lambda_reg * reg_l2(params), states
-
-
 def load_state(path_params: str, path_states: str) -> ModelState:
     """Load a model's state from pickles."""
     with open(path_params, "rb") as f_params:
@@ -169,14 +154,14 @@ def train_step(
         batch: Yolov3Batch,
     ) -> tuple[ModelState, optax.OptState, jnp.ndarray]:
         """Update parameters and states."""
-        (train_los, states), grads = jax.value_and_grad(l2loss, has_aux=True)(
+        (train_los, states), grads = jax.value_and_grad(loss, has_aux=True)(
             var.params,
             var.states,
             xfm,
             key,
             batch,
         )
-        updates, opt_state = optim.update(grads, opt_state)
+        updates, opt_state = optim.update(grads, opt_state, var.params)
         params = optax.apply_updates(var.params, updates)
         return ModelState(params, states), opt_state, train_los
 
@@ -225,7 +210,7 @@ def train(
 
     xfm = hk.transform_with_state(model_fn)
     var = model_init(xfm, k_model, ds_train.rand_batch(k_data))
-    optim = optax.adam(lr)
+    optim = optax.adamw(lr, weight_decay=1e-5)
     opt_state = optim.init(var.params)
 
     best_score = -9999.9
@@ -300,7 +285,7 @@ def tuning(
     ds_test = CocoDataset(mode="TEST", batch=batch_valid)
 
     xfm = hk.transform_with_state(model_fn)
-    optim = optax.adam(lr)
+    optim = optax.adamw(lr, weight_decay=1e-5)
     opt_state = optim.init(var.params)
 
     best_score = -9999.9
