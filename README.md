@@ -83,7 +83,7 @@ Train model:
 
 ```sh
 pdm run yolov3 train --seed=0 --n-epoch=20000 --lr=0.001 \
-    --batch-train=16 --batch-valid=16 --eval-span=1000
+    --batch-train=16 --batch-valid=16 --eval-span=1000 --eval-loop=16
 ```
 
 Fine-tuning pre-trained model:
@@ -92,5 +92,5 @@ Fine-tuning pre-trained model:
 pdm run yolov3 tuning --path-params=data/model_yolov3_params.pickle \
     --path-states=data/model_yolov3_states.pickle \
     --seed=0 --n-epoch=10000 --lr=0.00001 \
-    --batch-train=16 --batch-valid=32 --eval-span=16 --eval-loop=256
+    --batch-train=16 --batch-valid=32 --eval-span=1 --eval-loop=256
 ```

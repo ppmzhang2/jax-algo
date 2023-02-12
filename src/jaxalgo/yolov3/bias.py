@@ -97,8 +97,9 @@ def bias(
     pred: jnp.ndarray,
     label: jnp.ndarray,
     lambda_obj: float = 2.0,
-    lambda_bgd: float = 1.0,
+    lambda_bgd: float = 5.0,
     lambda_coord: float = 2.0,
+    lambda_class: float = 2.0,
     conf_th: float = 0.5,
 ) -> jnp.ndarray:
     """Calculate loss."""
@@ -140,4 +141,5 @@ def bias(
     return (lambda_bgd * jnp.sum(bias_bgd) / n_bgd +
             lambda_obj * jnp.sum(bias_obj) / n_obj +
             lambda_coord * jnp.sum(bias_xy) / n_obj +
-            jnp.sum(bias_wh) / n_obj + jnp.sum(bias_class) / n_obj)
+            jnp.sum(bias_wh) / n_obj +
+            lambda_class * jnp.sum(bias_class) / n_obj)
