@@ -27,3 +27,7 @@ __pypackages__/
 
 # pyenv
 .python-version
+
+# jupyter notebook
+*.ipynb
+.ipynb_checkpoints/

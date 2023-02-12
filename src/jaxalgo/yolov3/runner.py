@@ -46,6 +46,12 @@ class ModelState(NamedTuple):
     states: hk.State
 
 
+def reg_l2(params: hk.Params) -> jnp.ndarray:
+    """L2 variance."""
+    params_sq = jax.tree_map(lambda x: jnp.square(x), params)
+    return 0.5 * sum(jnp.sum(p) for p in jax.tree_util.tree_leaves(params_sq))
+
+
 def loss(
     params: hk.Params,
     states: hk.State,
@@ -104,7 +110,7 @@ def best_state(best_eval_score: jnp.ndarray):
     return _helper
 
 
-def state_checkpoint(best_eval_score: jnp.ndarray):
+def checkpoint(best_eval_score: jnp.ndarray):
     """Returns a checkpoint function to save model's states.
     Save current model's state if if performs better than baseline.
 
@@ -155,7 +161,7 @@ def train_step(
             key,
             batch,
         )
-        updates, opt_state = optim.update(grads, opt_state)
+        updates, opt_state = optim.update(grads, opt_state, var.params)
         params = optax.apply_updates(var.params, updates)
         return ModelState(params, states), opt_state, train_los
 
@@ -169,6 +175,7 @@ def train(
     batch_train: int,
     batch_valid: int,
     eval_span: int,
+    eval_loop: int,
 ) -> None:
     """Trainer.
 
@@ -191,6 +198,11 @@ def train(
         """Update parameters and states."""
         return train_step(xfm, optim)(var, opt_state, key, batch)
 
+    @jax.jit
+    def loss_acc(var: ModelState, key: KeyArray, batch: Yolov3Batch,
+                 acc: float) -> jnp.ndarray:
+        return acc + loss(var.params, var.states, xfm, key, batch)[0]
+
     ds_train = CocoDataset(mode="TRAIN", batch=batch_train)
     ds_test = CocoDataset(mode="TEST", batch=batch_valid)
     key = jax.random.PRNGKey(seed)
@@ -198,11 +210,12 @@ def train(
 
     xfm = hk.transform_with_state(model_fn)
     var = model_init(xfm, k_model, ds_train.rand_batch(k_data))
-    optim = optax.adam(lr)
+    optim = optax.adamw(lr, weight_decay=1e-5)
     opt_state = optim.init(var.params)
 
+    best_score = -9999.9
     for idx, k in enumerate(jax.random.split(subkey, num=n_epoch)):
-        (k_train, k_eval, k_traindata, k_evaldata) = jax.random.split(k, num=4)
+        (k_train, k_eval, k_traindata) = jax.random.split(k, num=3)
         var, opt_state, train_los = train_step_fn(
             var,
             opt_state,
@@ -211,10 +224,19 @@ def train(
         )
         LOGGER.info(f"training loss: {train_los}")
         if idx % eval_span == eval_span - 1:
-            batch_test = ds_test.rand_batch(k_evaldata)
-            eval_los, _ = loss(var.params, var.states, xfm, k_eval, batch_test)
+
+            los_sum = 0
+            for idx, k in enumerate(jax.random.split(k_eval, num=eval_loop),
+                                    start=1):
+                batch = ds_test.top_batch(idx * eval_loop)
+                los_sum = loss_acc(var, k, batch, los_sum)
+            eval_los = los_sum / eval_loop
+
             LOGGER.info(f"evaluation loss: {eval_los}")
-            save_state(var, get_var_path(idx), get_var_path(idx, params=False))
+            checkpoint_fn = checkpoint(best_score)
+            best_score = checkpoint_fn(var, -eval_los)
+            # best_state_fn = best_state(best_score)
+            # best_score, var = best_state_fn(var, -eval_los)
 
 
 def tuning(
@@ -260,10 +282,10 @@ def tuning(
 
     var = load_state(path_params, path_states)
     ds_train = CocoDataset(mode="TRAIN", batch=batch_train)
-    ds = CocoDataset(mode="TEST", batch=batch_valid)
+    ds_test = CocoDataset(mode="TEST", batch=batch_valid)
 
     xfm = hk.transform_with_state(model_fn)
-    optim = optax.adam(lr)
+    optim = optax.adamw(lr, weight_decay=1e-5)
     opt_state = optim.init(var.params)
 
     best_score = -9999.9
@@ -275,13 +297,15 @@ def tuning(
             los_sum = 0
             for idx, k in enumerate(jax.random.split(k_eval, num=eval_loop),
                                     start=1):
-                batch = ds.top_batch(idx * eval_loop)
+                batch = ds_test.top_batch(idx * eval_loop)
                 los_sum = loss_acc(var, k, batch, los_sum)
             eval_los = los_sum / eval_loop
 
             LOGGER.info(f"evaluation loss: {eval_los}")
-            checkpoint_fn = state_checkpoint(best_score)
+            checkpoint_fn = checkpoint(best_score)
             best_score = checkpoint_fn(var, -eval_los)
+            # best_state_fn = best_state(best_score)
+            # best_score, var = best_state_fn(var, -eval_los)
 
         var, opt_state, train_los = train_step_fn(
             var,
