@@ -292,7 +292,7 @@ def tuning(
             eval_los = los_sum / eval_loop
 
             LOGGER.info(f"evaluation loss: {eval_los}")
-            best_state_fn = best_state(best_score)
+            best_state_fn, var = best_state(best_score)
             best_score = best_state_fn(var, -eval_los)
 
         var, opt_state, train_los = train_step_fn(
