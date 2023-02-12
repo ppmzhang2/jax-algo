@@ -46,6 +46,12 @@ class ModelState(NamedTuple):
     states: hk.State
 
 
+def reg_l2(params: hk.Params) -> jnp.ndarray:
+    """L2 variance."""
+    params_sq = jax.tree_map(lambda x: jnp.square(x), params)
+    return 0.5 * sum(jnp.sum(p) for p in jax.tree_util.tree_leaves(params_sq))
+
+
 def loss(
     params: hk.Params,
     states: hk.State,
@@ -60,6 +66,21 @@ def loss(
     los = (bias(prd_s, batch.label_s) + bias(prd_m, batch.label_m) +
            bias(prd_l, batch.label_l))
     return los, states
+
+
+def l2loss(
+    params: hk.Params,
+    states: hk.State,
+    xfm: hk.TransformedWithState,
+    key: KeyArray,
+    batch: Yolov3Batch,
+    *,
+    lambda_reg: float = 1e-3,
+) -> tuple[jnp.ndarray, hk.State]:
+    """Loss function with L2 regulation."""
+
+    los, states = loss(params, states, xfm, key, batch)
+    return los + lambda_reg * reg_l2(params), states
 
 
 def load_state(path_params: str, path_states: str) -> ModelState:
@@ -148,7 +169,7 @@ def train_step(
         batch: Yolov3Batch,
     ) -> tuple[ModelState, optax.OptState, jnp.ndarray]:
         """Update parameters and states."""
-        (train_los, states), grads = jax.value_and_grad(loss, has_aux=True)(
+        (train_los, states), grads = jax.value_and_grad(l2loss, has_aux=True)(
             var.params,
             var.states,
             xfm,
