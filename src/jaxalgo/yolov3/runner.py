@@ -226,6 +226,7 @@ def tuning(
     batch_train: int,
     batch_valid: int,
     eval_span: int,
+    eval_loop: int,
 ) -> None:
     """Fine-tuning from pre-trained model.
 
@@ -238,6 +239,8 @@ def tuning(
         batch_train (int): batch size for training
         batch_valid (int): batch size for validation
         eval_span (int): span of epochs between each evaluation
+        eval_loop (int): number of evaluation loop, and number of evaluated
+            records will be batch_valid * eval_loop
     """
 
     @jax.jit
@@ -250,9 +253,14 @@ def tuning(
         """Update parameters and states."""
         return train_step(xfm, optim)(var, opt_state, key, batch)
 
+    @jax.jit
+    def loss_acc(var: ModelState, key: KeyArray, batch: Yolov3Batch,
+                 acc: float) -> jnp.ndarray:
+        return acc + loss(var.params, var.states, xfm, key, batch)[0]
+
     var = load_state(path_params, path_states)
     ds_train = CocoDataset(mode="TRAIN", batch=batch_train)
-    ds_test = CocoDataset(mode="TEST", batch=batch_valid)
+    ds = CocoDataset(mode="TEST", batch=batch_valid)
 
     xfm = hk.transform_with_state(model_fn)
     optim = optax.adam(lr)
@@ -261,10 +269,16 @@ def tuning(
     best_score = -9999.9
     key = jax.random.PRNGKey(seed)
     for idx, k in enumerate(jax.random.split(key, num=n_epoch)):
-        (k_train, k_eval, k_traindata, k_evaldata) = jax.random.split(k, num=4)
+        (k_train, k_eval, k_traindata) = jax.random.split(k, num=3)
         if idx % eval_span == 0:  # evaluate before training starts
-            batch_test = ds_test.rand_batch(k_evaldata)
-            eval_los, _ = loss(var.params, var.states, xfm, k_eval, batch_test)
+
+            los_sum = 0
+            for idx, k in enumerate(jax.random.split(k_eval, num=eval_loop),
+                                    start=1):
+                batch = ds.top_batch(idx * eval_loop)
+                los_sum = loss_acc(var, k, batch, los_sum)
+            eval_los = los_sum / eval_loop
+
             LOGGER.info(f"evaluation loss: {eval_los}")
             checkpoint_fn = state_checkpoint(best_score)
             best_score = checkpoint_fn(var, -eval_los)
