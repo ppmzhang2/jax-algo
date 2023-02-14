@@ -94,3 +94,19 @@ pdm run yolov3 tuning --path-params=data/model_yolov3_params.pickle \
     --seed=0 --n-epoch=10000 --lr=0.001 \
     --batch-train=16 --batch-valid=32 --eval-span=10 --eval-loop=256
 ```
+
+Show ground truth boxes on an image:
+
+```sh
+pdm run yolov3 show-true-box --row-id=1 --file-name=./data/coco_test_1.jpg
+```
+
+Show prediction boxes on an image:
+
+```sh
+pdm run yolov3 show-predict-box --row-id=1 \
+    --file-name=./data/coco_pred_1.jpg --seed=0 \
+    --params-path=./data/model_yolov3_params.pickle \
+    --states-path=./data/model_yolov3_states.pickle \
+    --conf-th=0.5 --iou-th=0.5
+```

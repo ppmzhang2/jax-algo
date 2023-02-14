@@ -3,30 +3,15 @@ import logging
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
+from jaxalgo.datasets.coco.const import YOLO_IN_PX
 from jaxalgo.yolov3.box import bbox
 from jaxalgo.yolov3.box import pbox
-from jaxalgo.yolov3.const import V3_ANCHORS
-from jaxalgo.yolov3.const import V3_GRIDSIZE
-from jaxalgo.yolov3.const import V3_INRESOLUT
 from jaxalgo.yolov3.utils import onehot_offset
 
 LOGGER = logging.getLogger(__name__)
 
 N_CLASS = 80
-
-STRIDE_MAP = {scale: V3_INRESOLUT // scale for scale in V3_GRIDSIZE}
-
-# anchors measured in corresponding strides
-ANCHORS_IN_STRIDE = (np.array(V3_ANCHORS).T /
-                     np.array(sorted(STRIDE_MAP.values()))).T
-
-# map from grid size to anchors measured in stride
-ANCHORS_MAP = {
-    scale: ANCHORS_IN_STRIDE[i]
-    for i, scale in enumerate(V3_GRIDSIZE)
-}
 
 
 def _all_but_last_dim(x: jnp.ndarray) -> tuple:
@@ -116,7 +101,7 @@ def bias(
     conf_th: float = 0.5,
 ) -> jnp.ndarray:
     """Calculate loss."""
-    pred_ = pbox.scaled_bbox(pred)
+    pred_ = pbox.asbbox(pred)
 
     mask_obj = (bbox.confnd(label) > conf_th).astype(jnp.float32)
     # TODO: multiply best iou
@@ -124,7 +109,7 @@ def bias(
 
     ious = bbox.iou(pred_, label)[..., jnp.newaxis]
 
-    conf_bias_iou = (2.0 - bbox.area(label) / 416**2)[..., jnp.newaxis]
+    conf_bias_iou = (2.0 - bbox.area(label) / YOLO_IN_PX**2)[..., jnp.newaxis]
     bias_iou = jnp.sum(conf_bias_iou * mask_obj * (1.0 - ious))
 
     conf_focal = jnp.power(
