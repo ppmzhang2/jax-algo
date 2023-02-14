@@ -78,6 +78,7 @@ def wh_exp(bbox: jnp.ndarray) -> jnp.ndarray:
 @jax.jit
 def conf1d(bbox: jnp.ndarray) -> jnp.ndarray:
     """Get object confidence from a tensor (squeezed).
+
     Suppose the number of ranks of the input tensor is R, the #rank of the
     output tensor will be R - 1 is `squeezed`.
     Otherwise the #rank of the output will remain as R, and the last
@@ -92,6 +93,7 @@ def conf1d(bbox: jnp.ndarray) -> jnp.ndarray:
 @jax.jit
 def confnd(bbox: jnp.ndarray) -> jnp.ndarray:
     """Get object confidence from a tensor (un-squeezed).
+
     Suppose the number of ranks of the input tensor is R, the #rank of the
     output tensor will be R - 1 is `squeezed`.
     Otherwise the #rank of the output will remain as R, and the last
@@ -177,6 +179,7 @@ def objects(
     conf_th: float = 0.1,
 ) -> jnp.ndarray:
     """Get bounding boxes only with high confidence scores.
+
     TODO: computing tensors with undetermined shape cannot use JIT
 
     Args:

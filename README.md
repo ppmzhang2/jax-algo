@@ -89,10 +89,11 @@ pdm run yolov3 train --seed=0 --n-epoch=20000 --lr=0.001 \
 Fine-tuning pre-trained model:
 
 ```sh
-pdm run yolov3 tuning --path-params=data/model_yolov3_params.pickle \
-    --path-states=data/model_yolov3_states.pickle \
+pdm run yolov3 tuning \
+    --path-params=model_config/model_yolov3_params_dn.pickle \
+    --path-states=model_config/model_yolov3_states_dn.pickle \
     --seed=0 --n-epoch=10000 --lr=0.001 \
-    --batch-train=16 --batch-valid=32 --eval-span=10 --eval-loop=256
+    --batch-train=16 --batch-valid=32 --eval-span=10 --eval-loop=16
 ```
 
 Show ground truth boxes on an image:
@@ -106,7 +107,16 @@ Show prediction boxes on an image:
 ```sh
 pdm run yolov3 show-predict-box --row-id=1 \
     --file-name=./data/coco_pred_1.jpg --seed=0 \
-    --params-path=./data/model_yolov3_params.pickle \
-    --states-path=./data/model_yolov3_states.pickle \
-    --conf-th=0.5 --iou-th=0.5
+    --params-path=model_config/model_yolov3_params.pickle \
+    --states-path=model_config/model_yolov3_states.pickle \
+    --conf-th=0.7 --iou-th=0.5
+```
+
+Load weights from pre-trained darknet model:
+
+```sh
+pdm run yolov3 load-darknet-weights --darknet-cfg=./model_config/yolov3.cfg \
+    --darknet-weight=model_config/yolov3.weights \
+    --params-path=./model_config/model_yolov3_params.pickle \
+    --states-path=./model_config/model_yolov3_states.pickle
 ```

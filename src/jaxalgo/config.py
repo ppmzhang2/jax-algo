@@ -46,8 +46,9 @@ class Config:
             },
         })
 
-    # data
+    # folders
     DATADIR = os.path.join(rootdir, "data")
+    MODELDIR = os.path.join(rootdir, "model_config")
 
 
 class TestConfig(Config):

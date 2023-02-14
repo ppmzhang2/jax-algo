@@ -62,10 +62,22 @@ ALL_ANCHORS = jnp.stack(
 SCALES = (YoloScale.S, YoloScale.M, YoloScale.L)
 N_IMG_TEST = 40504
 N_IMG_TRAIN = 82783
+N_MAX_BOX = 20
 E = 1e-4
 
 # map from COCO original class ID to class serial number
 CATEID_MAP = {cateid: sn for sn, cateid, _ in COCO_CATE}
+
+IDX_X = 0
+IDX_Y = 1
+IDX_W = 2
+IDX_H = 3
+IDX_X_OFF = 4
+IDX_Y_OFF = 5
+IDX_W_EXP = 6
+IDX_H_EXP = 7
+IDX_CONF = 8
+IDX_CLS = 9
 
 
 class Yolov3Batch(NamedTuple):
@@ -73,6 +85,9 @@ class Yolov3Batch(NamedTuple):
     label_s: jnp.ndarray  # [N, 52, 52, 3, 10]
     label_m: jnp.ndarray  # [N, 26, 26, 3, 10]
     label_l: jnp.ndarray  # [N, 13, 13, 3, 10]
+    gt_bx_s: jnp.ndarray  # [N_MAX_BOX, 10]
+    gt_bx_m: jnp.ndarray  # [N_MAX_BOX, 10]
+    gt_bx_l: jnp.ndarray  # [N_MAX_BOX, 10]
 
 
 class CocoDataset(BaseDataset):
@@ -142,14 +157,15 @@ class CocoDataset(BaseDataset):
         seq_label = [
             np.zeros((s, s, n_anchor_per_scale, ndim_last_rank),
                      dtype=np.float32) for s in SCALES
-        ]
+        ]  # [height, width, n_measure, 10]
         seq_row = self._dao.labels_by_img_id(img_id)
         for row in seq_row:
             indices_measure = self.max_iou_index(
                 jnp.array([row.x, row.y], dtype=jnp.float32), ALL_ANCHORS)
             # 0: small, 1: medium, 2: large
             for idx_scale, idx_measure in zip(range(len(SCALES)),
-                                              indices_measure):
+                                              indices_measure,
+                                              strict=True):
                 scale = SCALES[idx_scale]
                 grid = YOLO_GRIDS[scale]
                 # offset and top-left gridcell width index
@@ -163,16 +179,17 @@ class CocoDataset(BaseDataset):
                 h_exp = math.log(row.h / grid.anchors[idx_measure][1] + E)
                 cate_sn = CATEID_MAP[row.cateid]
                 # fill in
-                seq_label[idx_scale][i, j, idx_measure, 0] = row.x
-                seq_label[idx_scale][i, j, idx_measure, 1] = row.y
-                seq_label[idx_scale][i, j, idx_measure, 2] = row.w
-                seq_label[idx_scale][i, j, idx_measure, 3] = row.h
-                seq_label[idx_scale][i, j, idx_measure, 4] = x_offset
-                seq_label[idx_scale][i, j, idx_measure, 5] = y_offset
-                seq_label[idx_scale][i, j, idx_measure, 6] = w_exp
-                seq_label[idx_scale][i, j, idx_measure, 7] = h_exp
-                seq_label[idx_scale][i, j, idx_measure, 8] = 1.0
-                seq_label[idx_scale][i, j, idx_measure, 9] = cate_sn
+                # ATTENTION! j: height, i, width
+                seq_label[idx_scale][j, i, idx_measure, IDX_X] = row.x
+                seq_label[idx_scale][j, i, idx_measure, IDX_Y] = row.y
+                seq_label[idx_scale][j, i, idx_measure, IDX_W] = row.w
+                seq_label[idx_scale][j, i, idx_measure, IDX_H] = row.h
+                seq_label[idx_scale][j, i, idx_measure, IDX_X_OFF] = x_offset
+                seq_label[idx_scale][j, i, idx_measure, IDX_Y_OFF] = y_offset
+                seq_label[idx_scale][j, i, idx_measure, IDX_W_EXP] = w_exp
+                seq_label[idx_scale][j, i, idx_measure, IDX_H_EXP] = h_exp
+                seq_label[idx_scale][j, i, idx_measure, IDX_CONF] = 1.0
+                seq_label[idx_scale][j, i, idx_measure, IDX_CLS] = cate_sn
 
         return tuple(seq_label)
 
@@ -197,6 +214,12 @@ class CocoDataset(BaseDataset):
         return (row.imageid,
                 cv2.resize(rgb, (size, size), interpolation=cv2.INTER_AREA))
 
+    @staticmethod
+    def _get_gt_box(lab: jnp.ndarray) -> jnp.ndarray:
+        lab_ = lab[lab[..., IDX_CONF] == 1]
+        n_replica = N_MAX_BOX // lab.shape[0] + 1
+        return jnp.tile(lab_, (n_replica, 1))[:N_MAX_BOX, :]
+
     def _fetch(self, rowids: jnp.ndarray) -> Yolov3Batch:
         images, labels_s, labels_m, labels_l = [], [], [], []
         for i in rowids:
@@ -211,7 +234,15 @@ class CocoDataset(BaseDataset):
         labels_s_ = jnp.stack(labels_s)
         labels_m_ = jnp.stack(labels_m)
         labels_l_ = jnp.stack(labels_l)
-        return Yolov3Batch(images_, labels_s_, labels_m_, labels_l_)
+        return Yolov3Batch(
+            images_,
+            labels_s_,
+            labels_m_,
+            labels_l_,
+            self._get_gt_box(labels_s_),
+            self._get_gt_box(labels_m_),
+            self._get_gt_box(labels_l_),
+        )
 
     def rand_batch(self, key: KeyArray) -> Yolov3Batch:
         return self._fetch(self._rand_rowids(key))
