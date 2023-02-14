@@ -3,9 +3,19 @@ import json
 import logging
 
 import click
+import haiku as hk
+import jax
+import jax.numpy as jnp
+import numpy as np
+from PIL import Image
 
 from jaxalgo.datasets import CocoAnnotation
+from jaxalgo.datasets import CocoDataset
 from jaxalgo.yolov3 import runner
+from jaxalgo.yolov3.box import bbox
+from jaxalgo.yolov3.box import dbox
+from jaxalgo.yolov3.box import pbox
+from jaxalgo.yolov3.nms import three2one_1img
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +64,66 @@ def load_coco_annot(
 @click.option("--train", type=click.BOOL, required=True)
 def create_labels(train: bool) -> None:
     return CocoAnnotation.create_labels(train)
+
+
+@click.command()
+@click.option("--row-id", type=click.INT, required=True)
+@click.option("--file-name", type=click.STRING, required=True)
+def show_true_box(row_id: int, file_name: str) -> None:
+    batch = CocoDataset(mode="TEST", batch=1).top_batch(row_id - 1)
+    bx = jnp.concatenate(
+        [
+            bbox.objects(batch.label_s),
+            bbox.objects(batch.label_m),
+            bbox.objects(batch.label_l)
+        ],
+        axis=0,
+    )
+    bx = dbox.rel2act(bbox.asdbox(bx))
+    img = dbox.img_add_box(np.array(batch.image[0, ...]), np.array(bx))
+    return Image.fromarray(img).save(file_name)
+
+
+@click.command()
+@click.option("--row-id", type=click.INT, required=True)
+@click.option("--file-name", type=click.STRING, required=True)
+@click.option("--seed", type=click.INT, required=True)
+@click.option("--params-path", type=click.STRING, required=True)
+@click.option("--states-path", type=click.STRING, required=True)
+@click.option("--conf-th", type=click.FLOAT, required=True)
+@click.option("--iou-th", type=click.FLOAT, required=True)
+def show_predict_box(
+    row_id: int,
+    file_name: str,
+    seed: int,
+    params_path: str,
+    states_path: str,
+    conf_th: float,
+    iou_th: float,
+) -> None:
+    key = jax.random.PRNGKey(seed)
+    xfm = hk.transform_with_state(runner.model_fn)
+    var = runner.load_state(params_path, states_path)
+    batch = CocoDataset(mode="TEST", batch=1).top_batch(row_id - 1)
+
+    seq_pbox, _ = xfm.apply(var.params, var.states, key, batch.image / 255.)
+    seq_bbox = [pbox.asbbox(prd) for prd in seq_pbox]
+
+    bx = three2one_1img(
+        seq_bbox[0],
+        seq_bbox[1],
+        seq_bbox[2],
+        conf_th=conf_th,
+        iou_th=iou_th,
+        from_logits=True,
+    )
+    if bx is None:
+        LOGGER.warning("no boxes found")
+        return
+
+    bx = dbox.rel2act(bbox.asdbox(bx))
+    img = dbox.img_add_box(np.array(batch.image[0, ...]), np.array(bx))
+    return Image.fromarray(img).save(file_name)
 
 
 @click.command()

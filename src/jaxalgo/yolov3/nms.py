@@ -1,3 +1,5 @@
+from typing import Optional
+
 import jax.numpy as jnp
 import numpy as np
 
@@ -39,18 +41,19 @@ def nms_1class(boxes: jnp.ndarray, iou_th: float) -> jnp.ndarray:
         indices_, acc = _valid_indices(idx, indices_, boxes, iou_th, acc)
 
 
-def nms(boxes: jnp.ndarray, iou_th: float) -> jnp.ndarray:
-    cate_sns = _unique_class(boxes)  # class SNs
+def nms(boxes: jnp.ndarray, iou_th: float) -> Optional[jnp.ndarray]:
+    cate_sns = _unique_class(boxes)  # SNs
     seq = []
     for sn in cate_sns:
         t = nms_1class(bbox.classof(boxes, sn), iou_th)
         if t.size != 0:
             seq.append(t)
-
+    if seq == []:
+        return None
     return jnp.concatenate(seq, axis=0)
 
 
-def _three2one_1img(
+def three2one_1img(
     ys: jnp.ndarray,
     ym: jnp.ndarray,
     yl: jnp.ndarray,
@@ -58,7 +61,7 @@ def _three2one_1img(
     iou_th: float,
     *,
     from_logits: bool = False,
-) -> jnp.ndarray:
+) -> Optional[jnp.ndarray]:
     """Combile three label tensors into one.
 
     The input three tensors represent three grid size of a single image.
@@ -98,7 +101,7 @@ def three2one(
     """Combile three label tensors into one."""
     n_batch = ys.shape[0]
     return tuple(
-        _three2one_1img(
+        three2one_1img(
             ys[i, ...],
             ym[i, ...],
             yl[i, ...],

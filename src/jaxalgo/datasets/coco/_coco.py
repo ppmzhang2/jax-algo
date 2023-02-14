@@ -11,8 +11,7 @@ data format:
 
 TODO: data augmentation
 """
-from math import log
-from math import modf
+import math
 from typing import NamedTuple
 
 import cv2
@@ -26,11 +25,11 @@ from jaxalgo.datasets._base import BaseDataset
 from jaxalgo.datasets._types import Mode
 from jaxalgo.datasets.coco._dao import dao_test
 from jaxalgo.datasets.coco._dao import dao_train
+from jaxalgo.datasets.coco.const import COCO_CATE
+from jaxalgo.datasets.coco.const import YOLO_GRIDS
+from jaxalgo.datasets.coco.const import YOLO_IN_PX
+from jaxalgo.datasets.coco.const import YoloScale
 from jaxalgo.yolov3.box import whbox
-from jaxalgo.yolov3.const import COCO_CATE
-from jaxalgo.yolov3.const import V3_ANCHORS
-from jaxalgo.yolov3.const import V3_GRIDSIZE
-from jaxalgo.yolov3.const import V3_INRESOLUT
 
 __all__ = ["CocoDataset", "Yolov3Batch"]
 
@@ -51,10 +50,16 @@ __all__ = ["CocoDataset", "Yolov3Batch"]
 #   [[0.27884615, 0.21634615],
 #    [0.375     , 0.47596154],
 #    [0.89663462, 0.78365385]]]
-ANCHORS = np.array(V3_ANCHORS, dtype=np.float32) / V3_INRESOLUT
+ALL_ANCHORS = jnp.stack(
+    [
+        YOLO_GRIDS[YoloScale.S].anchors,
+        YOLO_GRIDS[YoloScale.M].anchors,
+        YOLO_GRIDS[YoloScale.L].anchors,
+    ],
+    axis=0,
+)
 
-STRIDES = [int(V3_INRESOLUT // n) for n in V3_GRIDSIZE]
-
+SCALES = (YoloScale.S, YoloScale.M, YoloScale.L)
 N_IMG_TEST = 40504
 N_IMG_TRAIN = 82783
 E = 1e-4
@@ -88,17 +93,17 @@ class CocoDataset(BaseDataset):
 
     @staticmethod
     def max_iou_index(
-        wh: np.ndarray,
-        anchors: np.ndarray,
-    ) -> np.ndarray:
-        """Get maximum IoU archors' indices.
+        wh: jnp.ndarray,
+        anchors: jnp.ndarray,
+    ) -> jnp.ndarray:
+        """Get maximum IoU anchors' indices.
 
         Args:
             wh (np.ndarray): width-height box of shape [2, ]
-            anchors (np.ndarray): anchors array of shape [..., 2]
+            anchors (np.ndarray): anchors array of shape [3, 3, 2]
 
         Returns:
-            np.ndarray: array of shape N by 2
+            jnp.ndarray: array of shape [3, ]
 
         By comparing a width-height box, get the most similar (i.e. largest
         IoU score) anchors' indices by each of their prier ranks.
@@ -107,7 +112,7 @@ class CocoDataset(BaseDataset):
         (center-cell, anchor scale, anchor measure) combination, for otherwise
         they will overwrite each other
 
-        How to decide which scale and measure:
+        Example:
             criteria: IOU (only of width and height)
             by calculating the IOU between the (3, 3, 2) anchors and one box of
             shape (2, ), e.g. [0.075, 0.075], the result is (3, 3) tensor:
@@ -116,19 +121,15 @@ class CocoDataset(BaseDataset):
              [0.50122092, 0.34890323, 0.13864692],
              [0.09324138, 0.03151515, 0.00800539]]
 
-            rank it:
+            rank it by the last axis (comparing by each row):
 
-            [[2, 1, 0],
-             [0, 1, 2],
-             [0, 1, 2]]
+            [2, 0, 0]
 
-            the occurrence of 0s indicate the index for scale and measures:
-            [0, 2], [1, 0] and [2, 0], format: [scale, measure]
+            It indicate the index of the most similar anchor within each scale:
+            [small, 2], [medium, 0] and [large, 0], format: [scale, measure]
         """
         scores = whbox.iou(wh, anchors)
-        indices_measure = np.argmax(scores, axis=-1)
-        indices_scale = np.array(range(3))
-        return np.stack([indices_scale, indices_measure], axis=1)
+        return jnp.argmax(scores, axis=-1)
 
     def label_by_id(
         self,
@@ -136,40 +137,41 @@ class CocoDataset(BaseDataset):
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get for training one label by ID."""
         # TBD: random noise
+        n_anchor_per_scale = 3
         ndim_last_rank = 10
         seq_label = [
-            np.zeros((size, size, ANCHORS.shape[1], ndim_last_rank),
-                     dtype=np.float32) for size in V3_GRIDSIZE
+            np.zeros((s, s, n_anchor_per_scale, ndim_last_rank),
+                     dtype=np.float32) for s in SCALES
         ]
         seq_row = self._dao.labels_by_img_id(img_id)
         for row in seq_row:
-            indices = self.max_iou_index(
-                np.array([row.x, row.y], dtype=np.float32), ANCHORS)
+            indices_measure = self.max_iou_index(
+                jnp.array([row.x, row.y], dtype=jnp.float32), ALL_ANCHORS)
             # 0: small, 1: medium, 2: large
-            for idx_scale, idx_measure in indices:
-                stride = STRIDES[idx_scale]
-                x, y = row.x * V3_INRESOLUT, row.y * V3_INRESOLUT
-                # offset and top-left grid cell width index
-                x_offset, i_ = modf(x / stride)
-                # offset and top-left grid cell height index
-                y_offset, j_ = modf(y / stride)
+            for idx_scale, idx_measure in zip(range(len(SCALES)),
+                                              indices_measure):
+                scale = SCALES[idx_scale]
+                grid = YOLO_GRIDS[scale]
+                # offset and top-left gridcell width index
+                x_offset, i_ = math.modf(row.x / grid.stride)
+                # offset and top-left gridcell height index
+                y_offset, j_ = math.modf(row.y / grid.stride)
                 i, j = int(i_), int(j_)
-                w, h = row.w * V3_INRESOLUT, row.h * V3_INRESOLUT
                 # reverse operation of anchor_w * e^{w_exp}
-                w_exp = log(row.w / ANCHORS[idx_scale, idx_measure][0] + E)
+                w_exp = math.log(row.w / grid.anchors[idx_measure][0] + E)
                 # reverse operation of anchor_h * e^{h_exp}
-                h_exp = log(row.h / ANCHORS[idx_scale, idx_measure][1] + E)
+                h_exp = math.log(row.h / grid.anchors[idx_measure][1] + E)
                 cate_sn = CATEID_MAP[row.cateid]
                 # fill in
-                seq_label[idx_scale][i, j, idx_measure, 0] = x
-                seq_label[idx_scale][i, j, idx_measure, 1] = y
-                seq_label[idx_scale][i, j, idx_measure, 2] = w
-                seq_label[idx_scale][i, j, idx_measure, 3] = h
+                seq_label[idx_scale][i, j, idx_measure, 0] = row.x
+                seq_label[idx_scale][i, j, idx_measure, 1] = row.y
+                seq_label[idx_scale][i, j, idx_measure, 2] = row.w
+                seq_label[idx_scale][i, j, idx_measure, 3] = row.h
                 seq_label[idx_scale][i, j, idx_measure, 4] = x_offset
                 seq_label[idx_scale][i, j, idx_measure, 5] = y_offset
                 seq_label[idx_scale][i, j, idx_measure, 6] = w_exp
                 seq_label[idx_scale][i, j, idx_measure, 7] = h_exp
-                seq_label[idx_scale][i, j, idx_measure, 8] = 1
+                seq_label[idx_scale][i, j, idx_measure, 8] = 1.0
                 seq_label[idx_scale][i, j, idx_measure, 9] = cate_sn
 
         return tuple(seq_label)
@@ -198,7 +200,7 @@ class CocoDataset(BaseDataset):
     def _fetch(self, rowids: jnp.ndarray) -> Yolov3Batch:
         images, labels_s, labels_m, labels_l = [], [], [], []
         for i in rowids:
-            img_id, rgb_resized = self._get_img(i.item(), V3_INRESOLUT)
+            img_id, rgb_resized = self._get_img(i.item(), YOLO_IN_PX)
             label_s, label_m, label_l = self.label_by_id(img_id=img_id)
             images += [rgb_resized]
             labels_s += [label_s]

@@ -14,6 +14,8 @@ yolov3.add_command(yolov3_cli.coco_annot_to_csv)
 yolov3.add_command(yolov3_cli.create_labels)
 yolov3.add_command(yolov3_cli.db_reset)
 yolov3.add_command(yolov3_cli.load_coco_annot)
+yolov3.add_command(yolov3_cli.show_predict_box)
+yolov3.add_command(yolov3_cli.show_true_box)
 yolov3.add_command(yolov3_cli.train)
 yolov3.add_command(yolov3_cli.tuning)
 

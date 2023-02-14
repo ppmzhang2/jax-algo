@@ -1,14 +1,56 @@
 """YOLOv3 constants"""
+from enum import IntEnum
+from typing import NamedTuple
+
+import jax.numpy as jnp
+
 # YOLO constants
 # sequences all in the same order: small, medium, large
-V3_ANCHORS = (
-    ((10, 13), (16, 30), (33, 23)),
-    ((30, 61), (62, 45), (59, 119)),
-    ((116, 90), (156, 198), (373, 326)),
-)
-V3_GRIDSIZE = (52, 26, 13)
-V3_INRESOLUT = 416  # input resolution: V3_INRESOLUT by V3_INRESOLUT
-V3_INCHANNELS = 3
+
+
+class YoloScale(IntEnum):
+    S = 52
+    M = 26
+    L = 13
+
+
+class YoloGrid(NamedTuple):
+    size: int
+    stride: float
+    anchors: jnp.ndarray  # 3*2 matrix
+
+
+YOLO_GRIDS = {
+    YoloScale.S:
+    YoloGrid(
+        size=52,
+        stride=0.01923,  # 8 / 416
+        anchors=jnp.array([
+            [0.02404, 0.03125],  # (10 / 416, 13 / 416)
+            [0.03846, 0.07212],  # (16 / 416, 30 / 416)
+            [0.07933, 0.05529],  # (33 / 416, 23 / 416)
+        ])),
+    YoloScale.M:
+    YoloGrid(
+        size=26,
+        stride=0.03846,  # 16 / 416
+        anchors=jnp.array([
+            [0.07212, 0.14663],  # (30 / 416, 61 / 416)
+            [0.14904, 0.10817],  # (62 / 416, 45 / 416)
+            [0.14183, 0.28606],  # (59 / 416, 119 / 416)
+        ])),
+    YoloScale.L:
+    YoloGrid(
+        size=13,
+        stride=0.07692,  # 32 / 416
+        anchors=jnp.array([
+            [0.27885, 0.21635],  # (116 / 416, 90 / 416)
+            [0.37500, 0.47596],  # (156 / 416, 198 / 416)
+            [0.89663, 0.78365],  # (373 / 416, 326 / 416)
+        ])),
+}
+
+YOLO_IN_PX = 416  # input pixel resolution: 416 by 416
 
 # COCO category mapping: SN, class ID, class name
 COCO_CATE = (
