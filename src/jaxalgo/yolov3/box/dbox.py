@@ -7,6 +7,7 @@ shape: [..., M], where M >= 6:
 format: (x_min, y_min, x_max, y_max, [conf], classid, [logit_1, logit_2, ...])
 """
 import cv2
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -25,16 +26,19 @@ FONTSCALE = 0.35
 CATE_MAP = {sn: name for sn, _, name in COCO_CATE}
 
 
+@jax.jit
 def pmax(dbox: jnp.ndarray) -> jnp.ndarray:
     """Get bottom-right point from a diagonal box."""
     return dbox[..., 2:4]
 
 
+@jax.jit
 def pmin(dbox: jnp.ndarray) -> jnp.ndarray:
     """Get top-left point from a diagonal box."""
     return dbox[..., 0:2]
 
 
+@jax.jit
 def interarea(dbox_pred: jnp.ndarray, dbox_label: jnp.ndarray) -> jnp.ndarray:
     """Get intersection area of two Diagonal boxes.
 
@@ -49,6 +53,7 @@ def interarea(dbox_pred: jnp.ndarray, dbox_label: jnp.ndarray) -> jnp.ndarray:
     return jnp.multiply(inter[..., 0], inter[..., 1])
 
 
+@jax.jit
 def rel2act(dbox: jnp.ndarray) -> jnp.ndarray:
     """Convert relative represented dbox into actual size."""
     n_coord = 4  # xmin, ymin, xmax, ymax
@@ -56,7 +61,7 @@ def rel2act(dbox: jnp.ndarray) -> jnp.ndarray:
     coef = jnp.concatenate(
         [
             jnp.tile(np.array(YOLO_IN_PX), (*shape_pre, n_coord)),
-            jnp.ones((*shape_pre, rankz - n_coord))
+            jnp.ones((*shape_pre, rankz - n_coord)),
         ],
         axis=-1,
     )

@@ -8,29 +8,33 @@ import jax
 import jax.numpy as jnp
 
 from jaxalgo.datasets.coco.const import YOLO_GRIDS
-from jaxalgo.datasets.coco.const import YOLO_IN_PX
 from jaxalgo.datasets.coco.const import YoloScale
 from jaxalgo.yolov3.utils import onecold_offset
 
 
+@jax.jit
 def xy(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get x-y coordinatestensor from a tensor / array.
 
     Args:
         pbox (jnp.ndarray): model predicted box
     """
-    return pbox[..., :2]
+    # return jnp.concatenate([pbox[..., 1:2], pbox[..., 0:1]], axis=-1)
+    return pbox[..., 0:2]
 
 
+@jax.jit
 def wh(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get width and height from a tensor / array.
 
     Args:
         pbox (jnp.ndarray): model predicted box
     """
+    # return jnp.concatenate([pbox[..., 3:4], pbox[..., 2:3]], axis=-1)
     return pbox[..., 2:4]
 
 
+@jax.jit
 def xywh(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get x-y coordinatestensor, width and height from a tensor / array.
 
@@ -40,6 +44,7 @@ def xywh(pbox: jnp.ndarray) -> jnp.ndarray:
     return pbox[..., :4]
 
 
+@jax.jit
 def conf(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get object confidence from a tensor / array.
 
@@ -49,6 +54,7 @@ def conf(pbox: jnp.ndarray) -> jnp.ndarray:
     return pbox[..., 4:5]
 
 
+@jax.jit
 def class_logits(pbox: jnp.ndarray) -> jnp.ndarray:
     """Get class logits from a tensor / array.
 
@@ -69,15 +75,19 @@ def _grid_coord(batch_size: int, grid_size: int, n_anchor: int) -> jnp.ndarray:
             (small)
         n_anchor (int): number of anchors of a specific grid size, usually
             should be 3
+
+    Returns:
+        jnp.ndarray: [N_BATCH, H, W, N_ANCHOR, 2]
     """
     vec = jnp.arange(0, grid_size, dtype=jnp.float32)  # x or y range
     xs = vec[jnp.newaxis, :, jnp.newaxis, jnp.newaxis]
     ys = vec[jnp.newaxis, jnp.newaxis, :, jnp.newaxis]
     xss = jnp.tile(xs, (batch_size, 1, grid_size, n_anchor))
     yss = jnp.tile(ys, (batch_size, grid_size, 1, n_anchor))
-    return jnp.stack([xss, yss], axis=-1)
+    return jnp.stack([yss, xss], axis=-1)  # (H, W), NOT the other way around
 
 
+@jax.jit
 def asbbox(y: jnp.ndarray) -> jnp.ndarray:
     """Transform prediction to actual sized `bbox`."""
     batch_size = y.shape[0]
