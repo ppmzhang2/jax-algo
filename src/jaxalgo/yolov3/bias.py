@@ -130,6 +130,7 @@ def bias(
     # -------------------------------------------------------------------------
     mask_obj = bbox.confnd(lab).astype(jnp.float32)
     ious = _iou_max(prd, boxes)[..., jnp.newaxis]
+    coef_sbox = 2.0 - 1.0 * bbox.area(lab) / (416**2)
     mask_bgd = (1. - mask_obj) * (ious < iou_th)
     # mask_obj = mask_obj * (ious > iou_th)
     focal = jnp.power(ious - jax.nn.sigmoid(bbox.confnd(prd)), 2)
@@ -138,7 +139,8 @@ def bias(
     # IoU Bias
     # (1 - max(IoU)) of object grid cells
     # -------------------------------------------------------------------------
-    bias_iou = jnp.sum(mask_obj * (1 - ious), [1, 2, 3, 4])
+    bias_iou = jnp.sum(mask_obj * coef_sbox[..., jnp.newaxis] * (1 - ious),
+                       [1, 2, 3, 4])
 
     # -------------------------------------------------------------------------
     # Background Bias
